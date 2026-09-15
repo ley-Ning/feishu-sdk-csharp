@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>12</LangVersion>
+    <RootNamespace>Feishu</RootNamespace>
+    <Version>0.1.0</Version>
+    <Description>飞书 / Lark 开放平台 C# SDK（协议对齐 oapi-sdk-go v3）</Description>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="FeishuSdk.Tests" />
+  </ItemGroup>
+
+</Project>

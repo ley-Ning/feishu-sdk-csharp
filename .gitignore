@@ -1,0 +1,18 @@
+# Build artifacts
+bin/
+obj/
+artifacts/
+TestResults/
+
+# IDE
+.vs/
+.idea/
+*.user
+*.suo
+
+# OS
+.DS_Store
+
+# Local secrets / env（凭证绝不入库）
+.env
+.env.*
