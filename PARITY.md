@@ -228,10 +228,11 @@
 3. WS 重连为循环实现 + `Random.Shared`，无 goroutine 递归栈增长。
 4. 分页 `IAsyncEnumerable<T>`（语言级异步流）替代手动 Iterator。
 5. 验签比较用 `CryptographicOperations.FixedTimeEquals`（抗时序）。
+6. **事件驱动总线（架构演进）**：Go 版事件入口分散（ws.Dispatcher / webhook HTTP handler / 卡片 handler 各自为政）；C# 版以 `IEventHub` 契约统一——`EventDispatcher`（webhook 语义）与 `FeishuEventBus`（总线语义）实现同一契约，WS 客户端与 Channel 面向契约接线、事件源可插拔。总线层补齐 Go 没有的能力：前缀通配订阅（`im.message.*`）、统一事件信封（来源/元数据/强类型视图）、handler 异常隔离（单个订阅者抛错不影响其余且可经 `OnHandlerError` 可观测，回执语义仍对齐 Go）、WS 生命周期汇入总线、`IObservable` 事件流（Rx 兼容零依赖）。
 
 ## 10. 测试总览
 
-- **233/233 通过**（Release 构建零警告零错误；含本地 mock 真机链路 E2E 1 例，覆盖全部五项含 WS）。
-- 覆盖面：请求管道（14）、token 三模式与单飞（7）、ClientAssertion/OAuth（8）、事件（10）、卡片回调（9）、卡片 DSL（3）、contact（4）、authen（3）、**Channel 组件与编排（含端到端 24）**、**SSRF 防护（26 断言）**、**音视频时长（4）**、**ext（2）**、**registration（9）**、**生成服务（6+4+4 波）**、WS 协议（7 + 帧 6）、分页（2）、缓存/序列化（6）、AspNetCore 端点（3）、URL 构建（1）等。
+- **245/245 通过**（Release 构建；含本地 mock 真机链路 E2E 1 例覆盖全部五项含 WS、事件总线 12 例含 WS→总线→订阅者全链路）。
+- 覆盖面：请求管道（14）、token 三模式与单飞（7）、ClientAssertion/OAuth（8）、事件（10）、卡片回调（9）、卡片 DSL（3）、contact（4）、authen（3）、**Channel 组件与编排（含端到端 24）**、**事件总线（12）**、**SSRF 防护（26 断言）**、**音视频时长（4）**、**ext（2）**、**registration（9）**、**生成服务（6+4+4 波）**、WS 协议（7 + 帧 6）、分页（2）、缓存/序列化（6）、AspNetCore 端点（3）、URL 构建（1）等。
 - 协议向量均为独立来源预计算（Python sha1/sha256），非自我印证。
 - 真实飞书凭证 E2E 与真实 WS 服务端联调仍待凭证（第十九次确认缺失）；其余链路已由本地 mock 真机链路 E2E（五项全链路）+ 帧级契约测试覆盖。

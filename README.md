@@ -14,6 +14,7 @@
 | **OAuth 用户令牌** | 授权码换取 / 刷新 user_access_token（/oauth/v3/token），支持 client_secret 与 ClientAssertion 双凭证及代理转发 |
 | **强类型服务** | im v1、contact v3、authen v1（手写模板）+ bitable/drive/approval/task/docx/sheets/calendar/wiki/search/board/mail/docs/tenant/bot/application/translation/ocr/cardkit/moments/verification/acs/attendance/helpdesk/minutes/event-svc/okr/vc/admin/base/block/report/.../passport/spark/workplace/mdm/compensation/payroll/performance/unified_kms/aily/security_and_compliance/apaas/ehr/hire/corehr v1+v2 全量（`tools/FeishuSdk.CodeGen` 生成，992 端点，59 服务全部收口） |
 | **Channel 高层编排** | 归一化/去重(LRU+TTL)/处理锁/策略门控/批量合并/长文分片(代码围栏感知)/降级重试/流式节流回复/机器人身份缓存/**SSRF 防护**/**音视频时长探测(OGG/MP4)** |
+| **事件驱动总线** | `FeishuEventBus`：一切入站流量（WS/webhook/卡片）皆事件，同一根总线上强类型订阅/原始订阅/前缀通配（`im.message.*`）/全量订阅、handler 异常隔离、WS 生命周期事件、`IObservable` 事件流；`EventDispatcher` 与总线实现同一 `IEventHub` 契约，事件源可插拔 |
 | **一键建应用** | scene/registration：二维码轮询注册新应用（Addons 三段编码、Lark 域名自动切换、slow_down 退避），拿到 ClientId/Secret |
 | **ext 扩展** | DriveExplorer 建文件 + authen 便捷封装 |
 | **IAsyncEnumerable 分页** | `await foreach` 自动翻页，支持 `limit` |
@@ -23,10 +24,41 @@
 
 ```bash
 dotnet build FeishuSdk.slnx
-dotnet test tests/FeishuSdk.Tests   # 233 个用例
+dotnet test tests/FeishuSdk.Tests   # 245 个用例
 ```
 
 与 Go 版逐模块的一对一对照见 **[PARITY.md](PARITY.md)**。
+
+### 事件驱动（推荐入口）
+
+一切入站流量皆事件：WS 长连接、webhook、卡片回传汇入同一根总线，订阅、过滤、观察连接生命周期。
+
+```csharp
+using Feishu.EventBus;
+
+var bus = new FeishuEventBus();
+var ws = new FeishuWsClient(appId, appSecret);
+
+// 强类型订阅：信封（event_id/source/时间）+ P2MessageReceiveV1 视图
+bus.Subscribe<P2MessageReceiveV1>("im.message.receive_v1", (envelope, msg, ct) =>
+{
+    Console.WriteLine($"{envelope.EventId} 来自 {msg!.Sender?.SenderId?.OpenId}");
+    return Task.CompletedTask;
+});
+
+// 前缀通配 + WS 生命周期 + 异常可观测
+bus.SubscribePattern("im.message.*", (envelope, ct) => Task.CompletedTask);
+using var bridge = bus.ObserveWsLifecycle(ws);   // WsReady/WsReconnecting/... → 总线
+bus.OnHandlerError(e => Console.Error.WriteLine(e.Error));  // handler 异常不扩散，只在此可观测
+
+// 流式消费（IObservable，Rx 兼容，不引入 Rx 依赖）
+bus.AsObservable().Subscribe(e => Console.WriteLine(e.EventType));
+
+ws.Bind(bus);   // EventDispatcher 与 FeishuEventBus 实现同一 IEventHub 契约，可互换
+await ws.StartAsync();
+```
+
+`FeishuChannel` 同样面向 `IEventHub` 契约接线：绑定总线的 WS 客户端上，Channel 的事件订阅照常工作。
 
 ### 发消息
 
