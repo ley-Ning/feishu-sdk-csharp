@@ -46,8 +46,8 @@ public sealed partial class FeishuChannel
         if (_reactionWired || _ws == null) return this;
         _reactionWired = true;
         var dispatcher = _ws.EventHandler();
-        dispatcher?.OnRaw("im.message.reaction.created_v1", (raw, ct) => HandleReaction(raw, ct));
-        dispatcher?.OnRaw("im.message.reaction.deleted_v1", (raw, ct) => HandleReaction(raw, ct));
+        dispatcher?.SubscribeRaw("im.message.reaction.created_v1", (raw, ct) => HandleReaction(raw, ct));
+        dispatcher?.SubscribeRaw("im.message.reaction.deleted_v1", (raw, ct) => HandleReaction(raw, ct));
         return this;
     }
 
@@ -57,7 +57,7 @@ public sealed partial class FeishuChannel
         _onComment.Add(handler);
         if (_commentWired || _ws == null) return this;
         _commentWired = true;
-        _ws.EventHandler()?.OnRaw("drive.notice.comment_add_v1", HandleComment);
+        _ws.EventHandler()?.SubscribeRaw("drive.notice.comment_add_v1", HandleComment);
         return this;
     }
 
@@ -67,7 +67,7 @@ public sealed partial class FeishuChannel
         _onBotAdded.Add(handler);
         if (_botAddedWired || _ws == null) return this;
         _botAddedWired = true;
-        _ws.EventHandler()?.OnRaw("im.chat.member.bot.added_v1", HandleBotAdded);
+        _ws.EventHandler()?.SubscribeRaw("im.chat.member.bot.added_v1", HandleBotAdded);
         return this;
     }
 
@@ -77,7 +77,7 @@ public sealed partial class FeishuChannel
         _onCardAction.Add(handler);
         if (_cardActionWired || _ws == null) return this;
         _cardActionWired = true;
-        _ws.EventHandler()?.OnRaw("card_action_trigger", HandleCardAction);
+        _ws.EventHandler()?.SubscribeRaw("card_action_trigger", HandleCardAction);
         return this;
     }
 
@@ -92,7 +92,7 @@ public sealed partial class FeishuChannel
     {
         if (_messageWired || _ws == null) return;
         _messageWired = true;
-        _ws.EventHandler()?.OnRaw(ImEventTypes.MessageReceiveV1, (raw, ct) => HandleMessageAsync(raw, ct));
+        _ws.EventHandler()?.SubscribeRaw(ImEventTypes.MessageReceiveV1, (raw, ct) => HandleMessageAsync(raw, ct));
     }
 
     // ==================== 入站处理管道 ====================

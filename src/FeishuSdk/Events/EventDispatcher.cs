@@ -115,8 +115,10 @@ public sealed class AppTicketEvent
 /// <summary>
 /// 事件分发器：解密 → 验签 → challenge → 按 header.event_type 分发到强类型处理器。
 /// 同一事件类型允许多个处理器（按注册顺序执行）；回调处理器（OnCallback）返回值作为响应体。
+/// 实现 <see cref="EventBus.IEventHub"/> 契约，可直接绑定为 WS 客户端的事件枢纽；
+/// 需要通配订阅/生命周期/IObservable 时改用 <see cref="EventBus.FeishuEventBus"/>。
 /// </summary>
-public sealed class EventDispatcher : IWebhookHandler
+public sealed class EventDispatcher : IWebhookHandler, EventBus.IEventHub
 {
     public const string ReqTypeChallenge = "url_verification";
 
@@ -134,7 +136,7 @@ public sealed class EventDispatcher : IWebhookHandler
     /// <summary>app_ticket 写入回调（由 FeishuClient 关联 AppTicketManager）。</summary>
     internal Func<string, CancellationToken, Task>? AppTicketSink { get; set; }
 
-    private readonly record struct HandlerEntry(Type EventType, Func<object, CancellationToken, Task> Invoke);
+    private readonly record struct HandlerEntry(Type EventType, Func<object, CancellationToken, Task> Invoke, object? Tag = null);
 
     private sealed record CallbackEntry(Type EventType, Func<object, CancellationToken, Task<object?>> Invoke);
 
@@ -169,9 +171,28 @@ public sealed class EventDispatcher : IWebhookHandler
         {
             if (!_handlers.TryGetValue(eventType, out var list))
                 _handlers[eventType] = list = new List<HandlerEntry>();
-            list.Add(new HandlerEntry(typeof(byte[]), async (raw, ct) => await handler((byte[])raw, ct)));
+            list.Add(new HandlerEntry(typeof(byte[]), async (raw, ct) => await handler((byte[])raw, ct), Tag: handler));
         }
         return this;
+    }
+
+    /// <summary>IEventHub 契约实现：与 <see cref="OnRaw"/> 等价，但返回退订句柄（供 Channel 等按契约接线）。</summary>
+    IDisposable EventBus.IEventHub.SubscribeRaw(string eventType, Func<byte[], CancellationToken, Task> handler)
+    {
+        OnRaw(eventType, handler);
+        return new RawUnsubscriber(this, eventType, handler);
+    }
+
+    private sealed class RawUnsubscriber(EventDispatcher owner, string eventType, Func<byte[], CancellationToken, Task> handler) : IDisposable
+    {
+        public void Dispose()
+        {
+            lock (owner._gate)
+            {
+                if (owner._handlers.TryGetValue(eventType, out var list))
+                    list.RemoveAll(e => ReferenceEquals(e.Tag, handler));
+            }
+        }
     }
 
     /// <summary>

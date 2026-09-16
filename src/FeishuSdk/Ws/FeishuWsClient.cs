@@ -83,7 +83,7 @@ public sealed class FeishuWsClient : IAsyncDisposable
     private Task? _runLoop;
     private readonly FrameReassembler _reassembler = new(TimeSpan.FromSeconds(5));
 
-    private EventDispatcher? _eventDispatcher;
+    private EventBus.IEventHub? _eventHub;
 
     /// <summary>帧发送钩子（测试注入，拦截实际网络发送）。</summary>
     internal Func<WsFrame, CancellationToken, Task>? FrameSendOverride;
@@ -127,15 +127,18 @@ public sealed class FeishuWsClient : IAsyncDisposable
         _reconnectNonceSeconds = _options.ReconnectNonceSeconds;
     }
 
-    /// <summary>绑定事件分发器（收到数据帧后回调）。</summary>
-    public FeishuWsClient Bind(EventDispatcher dispatcher)
+    /// <summary>绑定事件枢纽（收到数据帧后回调；FeishuEventBus 与 EventDispatcher 均可）。</summary>
+    public FeishuWsClient Bind(EventBus.IEventHub hub)
     {
-        _eventDispatcher = dispatcher;
+        _eventHub = hub;
         return this;
     }
 
-    /// <summary>已绑定的事件分发器（对齐 Go ws.Client.EventHandler()）。</summary>
-    public EventDispatcher? EventHandler() => _eventDispatcher;
+    /// <summary>绑定事件分发器（webhook 复用场景；对齐 Go ws.Client.EventHandler()）。</summary>
+    public FeishuWsClient Bind(EventDispatcher dispatcher) => Bind((EventBus.IEventHub)dispatcher);
+
+    /// <summary>已绑定的事件枢纽（对齐 Go ws.Client.EventHandler()；FeishuChannel 由此注册原始订阅）。</summary>
+    public EventBus.IEventHub? EventHandler() => _eventHub;
 
     /// <summary>
     /// 启动长连接：完成首次建连后返回，心跳/收包/重连在后台任务中持续运行。
@@ -380,12 +383,12 @@ public sealed class FeishuWsClient : IAsyncDisposable
 
         var watch = System.Diagnostics.Stopwatch.StartNew();
         var success = false;
-        if (_eventDispatcher != null)
+        if (_eventHub != null)
         {
             try
             {
                 // 处理器返回错误/抛异常 → 回执 500（对齐 Go handleDataFrame 的 err 分支）
-                success = await _eventDispatcher.DispatchAsync(payload!, ct);
+                success = await _eventHub.DispatchAsync(payload!, ct);
             }
             catch (Exception ex)
             {
