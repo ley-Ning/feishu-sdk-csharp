@@ -1,5 +1,4 @@
 using System.Text;
-using System.Text.Json.Serialization;
 using System.Net.WebSockets;
 using Feishu.Events;
 
@@ -25,14 +24,18 @@ public sealed class FeishuWsOptions
     /// <summary>首次重连随机抖动上限（秒），避免服务端故障恢复瞬间的重连风暴。</summary>
     public int ReconnectNonceSeconds { get; set; } = 30;
 
+    /// <summary>附加到 bootstrap 请求与 WS 握手的自定义头（如代理网关鉴权）。</summary>
     public IDictionary<string, string> Headers { get; } = new Dictionary<string, string>();
 
     public string? Source { get; set; }
 
+    /// <summary>ClientAssertion JWT 提供方（代持凭证模式；设置后 AppSecret 不再发送）。</summary>
     public IClientAssertionProvider? ClientAssertionProvider { get; set; }
 
+    /// <summary>日志器（默认 Info 级别控制台输出）。</summary>
     public IFeishuLogger Logger { get; set; } = ConsoleFeishuLogger.InfoOnly;
 
+    /// <summary>JSON 序列化器（默认 SDK 统一实例，中文不转义）。</summary>
     public IFeishuSerializer Serializer { get; set; } = SystemTextJsonFeishuSerializer.Instance;
 
     /// <summary>bootstrap HTTP 处理器工厂（测试注入用；默认新建 HttpClient）。</summary>
@@ -109,8 +112,10 @@ public sealed class FeishuWsClient : IAsyncDisposable
     /// <summary>连接断开时触发。</summary>
     public event Action? OnDisconnected;
 
+    /// <summary>当前连接 id（来自连接 URL 的 device_id；未连接为空）。</summary>
     public string? ConnId => _connId;
 
+    /// <summary>用应用凭证创建 WS 客户端（配合 <see cref="Bind"/> 与 <see cref="StartAsync"/> 使用）。</summary>
     public FeishuWsClient(string appId, string appSecret, FeishuWsOptions? options = null)
     {
         _appId = appId;
@@ -638,126 +643,10 @@ public sealed class FeishuWsClient : IAsyncDisposable
 /// <summary>认证失败等不可恢复错误：不再重连。</summary>
 public sealed class FeishuWsFatalException : Exception
 {
+    /// <summary>飞书业务错误码（HTTP 状态码或 bootstrap code）。</summary>
     public int Code { get; }
 
     public FeishuWsFatalException(int code, string message) : base($"code: {code}, msg: {message}") => Code = code;
 
     public FeishuWsFatalException(string message) : base(message) => Code = 0;
-}
-
-// ---- bootstrap / 配置模型 ----
-
-internal sealed class WsBootstrapRequest
-{
-    [JsonPropertyName("AppID")]
-    public string? AppId { get; set; }
-
-    [JsonPropertyName("AppSecret")]
-    public string? AppSecret { get; set; }
-
-    [JsonPropertyName("ClientAssertion")]
-    public string? ClientAssertion { get; set; }
-}
-
-internal sealed class WsEndpointResp
-{
-    [JsonPropertyName("code")]
-    public int Code { get; set; }
-
-    [JsonPropertyName("msg")]
-    public string? Msg { get; set; }
-
-    [JsonPropertyName("data")]
-    public WsEndpoint? Data { get; set; }
-}
-
-internal sealed class WsEndpoint
-{
-    [JsonPropertyName("URL")]
-    public string? Url { get; set; }
-
-    [JsonPropertyName("ClientConfig")]
-    public WsClientConfig? ClientConfig { get; set; }
-}
-
-/// <summary>服务端下发的连接配置（pong 载荷 / bootstrap 附带）。</summary>
-public sealed class WsClientConfig
-{
-    [JsonPropertyName("ReconnectCount")]
-    [JsonNumberHandling(JsonNumberHandling.AllowReadingFromString)]
-    public int? ReconnectCount { get; set; }
-
-    [JsonPropertyName("ReconnectInterval")]
-    [JsonNumberHandling(JsonNumberHandling.AllowReadingFromString)]
-    public int? ReconnectInterval { get; set; }
-
-    [JsonPropertyName("ReconnectNonce")]
-    [JsonNumberHandling(JsonNumberHandling.AllowReadingFromString)]
-    public int? ReconnectNonce { get; set; }
-
-    [JsonPropertyName("PingInterval")]
-    [JsonNumberHandling(JsonNumberHandling.AllowReadingFromString)]
-    public int? PingInterval { get; set; }
-}
-
-/// <summary>上行回执帧载荷：{"code":200} / {"code":500}。</summary>
-internal sealed class WsUpstreamResponse
-{
-    [JsonPropertyName("code")]
-    public int StatusCode { get; set; }
-}
-
-/// <summary>分包重组器：大消息按 (message_id, sum, seq) 拆包传输，等齐后拼接。</summary>
-internal sealed class FrameReassembler(TimeSpan ttl)
-{
-    private readonly object _gate = new();
-    private readonly Dictionary<string, (byte[][] Parts, long Deadline)> _pending = new();
-
-    public byte[]? Combine(string messageId, int sum, int seq, byte[] part)
-    {
-        lock (_gate)
-        {
-            Cleanup();
-            if (!_pending.TryGetValue(messageId, out var entry))
-            {
-                var parts = new byte[sum][];
-                parts[seq] = part;
-                _pending[messageId] = (parts, Environment.TickCount64 + (long)ttl.TotalMilliseconds);
-                return null;
-            }
-
-            entry.Parts[seq] = part;
-            var capacity = 0;
-            foreach (var p in entry.Parts)
-            {
-                if (p == null)
-                {
-                    _pending[messageId] = entry;
-                    return null;
-                }
-                capacity += p.Length;
-            }
-
-            _pending.Remove(messageId);
-            var combined = new byte[capacity];
-            var offset = 0;
-            foreach (var p in entry.Parts)
-            {
-                Buffer.BlockCopy(p, 0, combined, offset, p.Length);
-                offset += p.Length;
-            }
-            return combined;
-        }
-    }
-
-    private void Cleanup()
-    {
-        var now = Environment.TickCount64;
-        List<string>? dead = null;
-        foreach (var (key, (_, deadline)) in _pending)
-            if (deadline <= now) (dead ??= []).Add(key);
-        if (dead != null)
-            foreach (var key in dead)
-                _pending.Remove(key);
-    }
 }
