@@ -1,5 +1,5 @@
 using Feishu;
-using Feishu.Events;
+using Feishu.EventBus;
 using Feishu.Services.Im;
 using Feishu.Ws;
 
@@ -96,31 +96,45 @@ if (appId.Length > 0 && Environment.GetEnvironmentVariable("FEISHU_DEMO_USER_ID"
     Console.WriteLine(user.Success ? $"user: {user.Data?.Name} ({user.Data?.OpenId})" : $"user failed: {user.Msg}");
 }
 
-// ---------- 3. 事件分发器（webhook 或 WebSocket 共用） ----------
-var dispatcher = new EventDispatcher(
-        verificationToken: Environment.GetEnvironmentVariable("FEISHU_VERIFICATION_TOKEN"),
-        encryptKey: Environment.GetEnvironmentVariable("FEISHU_ENCRYPT_KEY"))
-    .Bind(client) // 内置处理 app_ticket 事件（ISV 需要）
-    .On<P2MessageReceiveV1>(ImEventTypes.MessageReceiveV1, (e, ct) =>
+// ---------- 3+4. 事件驱动：统一总线 + WS 长连接（推荐入口） ----------
+// 一切入站流量（WS/webhook/卡片）皆事件：强类型订阅、前缀通配、生命周期、异常可观测。
+// webhook 场景改用 ASP.NET Core 集成（AddFeishu + MapFeishuEvents）或 EventDispatcher.HandleAsync。
+if (appId.Length > 0)
+{
+    var bus = new FeishuEventBus();
+
+    // 强类型订阅：信封（event_id/source）+ P2MessageReceiveV1 视图
+    bus.Subscribe<P2MessageReceiveV1>(ImEventTypes.MessageReceiveV1, (envelope, e, _) =>
     {
-        var text = e.Message?.Content;
-        Console.WriteLine($"收到消息 chat={e.Message?.ChatId} sender={e.Sender?.SenderId?.OpenId} content={text}");
+        Console.WriteLine($"[{envelope.EventId}] 收到消息 chat={e?.Message?.ChatId} sender={e?.Sender?.SenderId?.OpenId} content={e?.Message?.Content}");
         return Task.CompletedTask;
     });
 
-// ---------- 4. WebSocket 长连接（免公网端点收事件） ----------
-if (appId.Length > 0)
-{
+    // 前缀通配：im 域消息类事件（已读/回复等）统一观察
+    bus.SubscribePattern("im.message.*", (envelope, _) =>
+    {
+        Console.WriteLine($"[pattern] {envelope.EventType} ({envelope.Source})");
+        return Task.CompletedTask;
+    });
+
+    // handler 异常隔离：单个订阅者抛错不影响其余，在此可观测（告警/日志）
+    bus.OnHandlerError(e => Console.Error.WriteLine($"handler error on {e.EventType}: {e.Error.Message}"));
+
     var ws = new FeishuWsClient(appId, appSecret, new FeishuWsOptions
     {
         // Domain = FeishuOptions.LarkBaseUrl, // 国际版
     })
-        .Bind(dispatcher);
-    ws.OnReady += () => Console.WriteLine($"ws ready, connId: {ws.ConnId}");
-    ws.OnError += ex => Console.Error.WriteLine($"ws error: {ex.Message}");
+        .Bind(bus); // 事件源可插拔：EventDispatcher 与 FeishuEventBus 实现同一 IEventHub 契约
+
+    // WS 生命周期汇入总线（Ready/Reconnecting/Reconnected/Disconnected/Error）
+    using var lifecycle = bus.ObserveWsLifecycle(ws);
+    bus.OnLifecycle(e => Console.WriteLine($"[lifecycle] {e.Kind}{(e.Error != null ? $": {e.Error.Message}" : "")}"));
+
+    // 流式消费（IObservable，Rx 兼容零依赖）
+    using var stream = bus.AsObservable().Subscribe(e => Console.WriteLine($"[stream] {e.EventType}"));
 
     await ws.StartAsync();
-    Console.WriteLine("listening events via websocket, press Ctrl+C to exit");
+    Console.WriteLine("listening events via event bus over websocket, press Ctrl+C to exit");
 
     using var cts = new CancellationTokenSource();
     Console.CancelKeyPress += (_, _) => cts.Cancel();
