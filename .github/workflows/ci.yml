@@ -1,0 +1,30 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Build (Release, 零警告)
+        run: dotnet build FeishuSdk.slnx -c Release --nologo
+
+      - name: Test (Release)
+        run: dotnet test tests/FeishuSdk.Tests -c Release --no-build --nologo
+
+      - name: Pack (产物检查)
+        run: dotnet pack src/FeishuSdk -c Release --no-build --nologo
