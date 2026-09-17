@@ -1,5 +1,6 @@
 using System.Text;
 using Feishu;
+using Feishu.Channel;
 using Feishu.EventBus;
 using Feishu.Events;
 using Feishu.Services.Im;
@@ -239,5 +240,47 @@ public class EventBusTests
 
         await wsClient.ShutdownAsync();
         Assert.Contains(FeishuLifecycleKind.WsDisconnected, lifecycleKinds); // 主动停机 → 生命周期事件
+    }
+
+    // ---- Channel + 总线组合：WS 绑总线后 Channel 的事件订阅照常工作（契约可插拔的关键证据） ----
+
+    [Fact]
+    public async Task Full_E2E_Ws_Bus_With_FeishuChannel_OnMessage()
+    {
+        using var server = new MockFeishuServer();
+        var client = new FeishuClient(new FeishuOptions
+        {
+            AppId = "mock_app",
+            AppSecret = "mock_secret",
+            BaseUrl = server.BaseUrl,
+            Logger = NullFeishuLogger.Instance,
+        });
+        var bus = new FeishuEventBus();
+
+        await using var wsClient = new FeishuWsClient("mock_app", "mock_secret", new FeishuWsOptions
+        {
+            Domain = server.BaseUrl,
+            Logger = NullFeishuLogger.Instance,
+        });
+        wsClient.Bind(bus); // 总线作事件枢纽（而非 EventDispatcher）
+
+        var channel = new FeishuChannel(client, wsClient);
+        var received = new TaskCompletionSource<NormalizedMessage>(TaskCreationOptions.RunContinuationsAsynchronously);
+        channel.OnMessage((msg, _) =>
+        {
+            received.TrySetResult(msg);
+            return Task.CompletedTask;
+        });
+
+        await channel.StartAsync();
+        await server.WaitForWsClientAsync(TimeSpan.FromSeconds(5));
+        await server.PushMessageEventAsync("总线上的 Channel");
+
+        var norm = await received.Task.WaitAsync(TimeSpan.FromSeconds(5)); // 批量管道 flush 后送达
+        Assert.Equal("om_evt_1", norm.MessageId);
+        Assert.Equal("ou_mock_user", norm.UserId);
+        Assert.Equal("总线上的 Channel", norm.Content);
+
+        await channel.StopAsync();
     }
 }
