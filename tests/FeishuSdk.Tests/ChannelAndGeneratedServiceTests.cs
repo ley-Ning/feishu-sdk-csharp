@@ -420,7 +420,12 @@ public class GeneratedServiceTests
     [Fact]
     public void CodeGen_Should_Generate_Deterministic_Files()
     {
-        var root = "/Users/wen/WorkBuddy/游戏开发/feishu-sdk-csharp/src/FeishuSdk/Services";
+        // 从测试程序集向上定位仓库根（本地 / CI 均可，不硬编码绝对路径）
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir != null && !File.Exists(Path.Combine(dir.FullName, "FeishuSdk.slnx")))
+            dir = dir.Parent;
+        Assert.NotNull(dir);
+        var root = Path.Combine(dir!.FullName, "src", "FeishuSdk", "Services");
         foreach (var svc in new[] { "Bitable", "Drive", "Approval", "Task", "Docx" })
         {
             var file = Path.Combine(root, svc, $"{svc}Service.g.cs");
