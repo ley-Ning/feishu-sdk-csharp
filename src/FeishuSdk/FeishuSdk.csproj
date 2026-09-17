@@ -9,7 +9,21 @@
     <Version>0.1.0</Version>
     <Description>飞书 / Lark 开放平台 C# SDK（协议对齐 oapi-sdk-go v3）</Description>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageId>FeishuSdk</PackageId>
+    <Authors>ley-Ning</Authors>
+    <RepositoryUrl>https://github.com/ley-Ning/feishu-sdk-csharp</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageProjectUrl>https://github.com/ley-Ning/feishu-sdk-csharp</PackageProjectUrl>
+    <PackageTags>feishu;lark;larksuite;openapi;sdk;webhook;websocket</PackageTags>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <!-- 生成 XML 文档包：少数测试钩子/internal 垫片未带注释会触发 CS1591，豁免之 -->
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
   </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="..\..\README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
 
   <ItemGroup>
     <InternalsVisibleTo Include="FeishuSdk.Tests" />

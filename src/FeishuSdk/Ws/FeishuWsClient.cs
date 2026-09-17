@@ -115,7 +115,7 @@ public sealed class FeishuWsClient : IAsyncDisposable
     /// <summary>当前连接 id（来自连接 URL 的 device_id；未连接为空）。</summary>
     public string? ConnId => _connId;
 
-    /// <summary>用应用凭证创建 WS 客户端（配合 <see cref="Bind"/> 与 <see cref="StartAsync"/> 使用）。</summary>
+    /// <summary>用应用凭证创建 WS 客户端（配合 <see cref="Bind(EventBus.IEventHub)"/> 与 <see cref="StartAsync"/> 使用）。</summary>
     public FeishuWsClient(string appId, string appSecret, FeishuWsOptions? options = null)
     {
         _appId = appId;
